@@ -95,7 +95,8 @@ for mensaje in st.session_state.historial:
     with st.chat_message(mensaje["tipo"]):
         st.write(mensaje["contenido"])
 
-# Preguntas generales antes de las noticias
+# Lógica principal
+
 if st.session_state.pregunta_general_idx < len(preguntas_inversor):
     pregunta_actual = preguntas_inversor[st.session_state.pregunta_general_idx]
     if not any(p["contenido"] == pregunta_actual for p in st.session_state.historial if p["tipo"] == "bot"):
@@ -110,38 +111,6 @@ if st.session_state.pregunta_general_idx < len(preguntas_inversor):
         st.session_state.pregunta_general_idx += 1
         st.rerun()
 
-# Función para procesar respuesta a noticia
-def procesar_respuesta_valida(user_input):
-    if st.session_state.pregunta_pendiente:
-        del st.session_state.pregunta_pendiente
-        st.session_state.reacciones.append(user_input)
-        st.session_state.historial.append({"tipo": "user", "contenido": user_input})
-        with st.chat_message("bot", avatar="🤖"):
-            st.write("Gracias por tu respuesta. Avanzando a la siguiente noticia...")
-        st.session_state.historial.append({"tipo": "bot", "contenido": "Gracias por tu respuesta. Avanzando a la siguiente noticia..."})
-        st.session_state.contador += 1
-        st.session_state.mostrada_noticia = False
-        st.rerun()
-    else:
-        evaluacion = cadena_evaluacion.run(respuesta=user_input).strip().lower()
-        if evaluacion == "false":
-            pregunta_ampliacion = cadena_reaccion.run(reaccion=user_input).strip()
-            st.session_state.pregunta_pendiente = pregunta_ampliacion
-            st.session_state.historial.append({"tipo": "bot", "contenido": pregunta_ampliacion})
-            st.session_state.reacciones.append(user_input)
-            with st.chat_message("bot", avatar="🤖"):
-                st.write(pregunta_ampliacion)
-        else:
-            st.session_state.reacciones.append(user_input)
-            st.session_state.historial.append({"tipo": "user", "contenido": user_input})
-            with st.chat_message("bot", avatar="🤖"):
-                st.write("Gracias por tu respuesta. Avanzando a la siguiente noticia...")
-            st.session_state.historial.append({"tipo": "bot", "contenido": "Gracias por tu respuesta. Avanzando a la siguiente noticia..."})
-            st.session_state.contador += 1
-            st.session_state.mostrada_noticia = False
-            st.rerun()
-
-# Lógica principal con noticias
 elif st.session_state.contador < len(noticias):
     if not st.session_state.mostrada_noticia:
         noticia = noticias[st.session_state.contador]
@@ -154,7 +123,6 @@ elif st.session_state.contador < len(noticias):
     if user_input:
         procesar_respuesta_valida(user_input)
 
-# Final: perfil y gráfico
 else:
     analisis_total = "\n".join(st.session_state.reacciones)
     perfil = cadena_perfil.run(analisis=analisis_total)
@@ -175,7 +143,6 @@ else:
     ax.set_title("Perfil del Inversor")
     st.pyplot(fig)
 
-    # Guardar en Google Sheets
     try:
         creds_json_str = st.secrets["gcp_service_account"]
         creds_json = json.loads(creds_json_str)
@@ -189,13 +156,3 @@ else:
         st.success("Datos guardados exitosamente en Google Sheets")
     except Exception as e:
         st.error(f"Error al guardar datos: {str(e)}")
-
-# Foco automático al input
-st.markdown("""
-<script>
-document.addEventListener('DOMContentLoaded', () => {
-    const input = document.querySelector('.stChatInput textarea');
-    if(input) input.focus();
-});
-</script>
-""", unsafe_allow_html=True)
