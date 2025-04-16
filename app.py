@@ -9,10 +9,11 @@ import json
 from dotenv import load_dotenv
 import matplotlib.pyplot as plt
 
+# Cargar variables de entorno
 load_dotenv()
-
-# Configurar el modelo LLM
 os.environ["GROQ_API_KEY"] = os.getenv("GROQ_API_KEY")
+
+# Configurar LLM
 llm = ChatGroq(
     model="gemma2-9b-it",
     temperature=0,
@@ -21,6 +22,16 @@ llm = ChatGroq(
     max_retries=2,
 )
 
+# Preguntas iniciales al inversor
+preguntas_inversor = [
+    "¿Cuál es tu objetivo principal al invertir?",
+    "¿Cuál es tu horizonte temporal de inversión?",
+    "¿Tienes experiencia previa invirtiendo en activos de mayor riesgo como acciones, criptomonedas o fondos alternativos?",
+    "¿Estás dispuesto a sacrificar parte de la rentabilidad potencial a cambio de un impacto social o ambiental positivo?",
+    "¿Qué opinas sobre el cambio climático?"
+]
+
+# Noticias para análisis
 noticias = [
     "Repsol, entre las 50 empresas que más responsabilidad histórica tienen en el calentamiento global",
     "Amancio Ortega crea un fondo de 100 millones de euros para los afectados de la dana",
@@ -33,36 +44,28 @@ noticias = [
     "Las aportaciones a los planes de pensiones caen 10.000 millones en los últimos cuatro años",
 ]
 
-preguntas_inversor = [
-    "¿Cuál es tu objetivo principal al invertir?",
-    "¿Cuál es tu horizonte temporal de inversión?",
-    "¿Tienes experiencia previa invirtiendo en activos de mayor riesgo como acciones, criptomonedas o fondos alternativos?",
-    "¿Estás dispuesto a sacrificar parte de la rentabilidad potencial a cambio de un impacto social o ambiental positivo?",
-    "¿Qué opinas sobre el cambio climático?"
-]
-
-# Plantillas
+# Plantillas de LLM
 plantilla_evaluacion = """
 Evalúa si esta respuesta del usuario es suficientemente detallada para un análisis ESG. 
-Considera como criterios:
-- Claridad de la opinión expresada
+Criterios:
+- Claridad de la opinión
 - Especificidad respecto a la noticia
-- Mención de aspectos relevantes (ambiental, social, gobernanza o riesgo)
-- Expresión de preocupaciones o riesgos identificables
+- Mención de aspectos ESG (ambiental, social, gobernanza o riesgo)
+- Identificación de preocupaciones o riesgos
 
 Respuesta del usuario: {respuesta}
 
-Si la respuesta es vaga, demasiado breve o no menciona aspectos concretos, devuelve "False".
-Si contiene una opinión sustancial con elementos analizables, devuelve "True".
+Si es vaga o superficial, responde "False".
+Si contiene opinión sustancial y analizable, responde "True".
 
-Solo devuelve "True" o "False".
+Solo responde "True" o "False".
 """
 prompt_evaluacion = PromptTemplate(template=plantilla_evaluacion, input_variables=["respuesta"])
 cadena_evaluacion = LLMChain(llm=llm, prompt=prompt_evaluacion)
 
 plantilla_reaccion = """
 Reacción del inversor: {reaccion}
-Genera ÚNICAMENTE una pregunta de seguimiento enfocada en profundizar en la opinión del inversor.  
+Genera ÚNICAMENTE una pregunta de seguimiento enfocada en profundizar en su opinión.
 Ejemplo:  
 "¿Consideras que la existencia de mecanismos robustos de control interno y transparencia podría mitigar tu preocupación por la gobernanza corporativa en esta empresa?"
 """
@@ -71,32 +74,51 @@ cadena_reaccion = LLMChain(llm=llm, prompt=prompt_reaccion)
 
 plantilla_perfil = """
 Análisis de reacciones: {analisis}
-Genera un perfil detallado del inversor basado en sus reacciones, enfocándote en los pilares ESG (Ambiental, Social y Gobernanza) y su aversión al riesgo. 
-Asigna una puntuación de 0 a 100 para cada pilar ESG y para el riesgo, donde 0 indica ninguna preocupación y 100 máxima preocupación o aversión.
-Devuelve las 4 puntuaciones en formato: Ambiental: [puntuación], Social: [puntuación], Gobernanza: [puntuación], Riesgo: [puntuación]
+Genera un perfil del inversor basado en ESG (Ambiental, Social y Gobernanza) y aversión al riesgo.
+Asigna puntuaciones de 0 a 100:
+
+Formato:
+Ambiental: [puntuación], Social: [puntuación], Gobernanza: [puntuación], Riesgo: [puntuación]
 """
 prompt_perfil = PromptTemplate(template=plantilla_perfil, input_variables=["analisis"])
 cadena_perfil = LLMChain(llm=llm, prompt=prompt_perfil)
 
-# Estados iniciales
+# Función para procesar respuestas válidas a las noticias
+def procesar_respuesta_valida(user_input):
+    pregunta_seguimiento = cadena_reaccion.run(reaccion=user_input).strip()
+    if st.session_state.contador_preguntas == 0:
+        with st.chat_message("bot", avatar="🤖"):
+            st.write(pregunta_seguimiento)
+        st.session_state.historial.append({"tipo": "bot", "contenido": pregunta_seguimiento})
+        st.session_state.pregunta_pendiente = True
+        st.session_state.contador_preguntas += 1
+    else:
+        st.session_state.reacciones.append(user_input)
+        st.session_state.contador += 1
+        st.session_state.mostrada_noticia = False
+        st.session_state.contador_preguntas = 0
+        st.session_state.pregunta_pendiente = False
+        st.rerun()
+
+# Inicializar estados
 if "historial" not in st.session_state:
     st.session_state.historial = []
-    st.session_state.reacciones = []
     st.session_state.contador = 0
+    st.session_state.reacciones = []
     st.session_state.mostrada_noticia = False
+    st.session_state.contador_preguntas = 0
     st.session_state.pregunta_general_idx = 0
-    st.session_state.preguntas_generales = []
-    st.session_state.pregunta_pendiente = None
+    st.session_state.pregunta_pendiente = False
 
-st.title("Chatbot de Análisis de Sentimiento")
+# Interfaz
+st.title("Chatbot de Análisis de Inversor ESG")
 
 # Mostrar historial
 for mensaje in st.session_state.historial:
-    with st.chat_message(mensaje["tipo"]):
+    with st.chat_message(mensaje["tipo"], avatar="🤖" if mensaje["tipo"] == "bot" else None):
         st.write(mensaje["contenido"])
 
-# Lógica principal
-
+# Preguntas iniciales al inversor
 if st.session_state.pregunta_general_idx < len(preguntas_inversor):
     pregunta_actual = preguntas_inversor[st.session_state.pregunta_general_idx]
     if not any(p["contenido"] == pregunta_actual for p in st.session_state.historial if p["tipo"] == "bot"):
@@ -111,21 +133,42 @@ if st.session_state.pregunta_general_idx < len(preguntas_inversor):
         st.session_state.pregunta_general_idx += 1
         st.rerun()
 
+# Noticias ESG
 elif st.session_state.contador < len(noticias):
     if not st.session_state.mostrada_noticia:
         noticia = noticias[st.session_state.contador]
-        st.session_state.historial.append({"tipo": "bot", "contenido": f"¿Qué opinas sobre esta noticia? {noticia}"})
+        texto_noticia = f"¿Qué opinas sobre esta noticia? {noticia}"
+        st.session_state.historial.append({"tipo": "bot", "contenido": texto_noticia})
         with st.chat_message("bot", avatar="🤖"):
-            st.write(f"¿Qué opinas sobre esta noticia? {noticia}")
+            st.write(texto_noticia)
         st.session_state.mostrada_noticia = True
 
     user_input = st.chat_input("Escribe tu respuesta aquí...")
     if user_input:
-        procesar_respuesta_valida(user_input)
+        st.session_state.historial.append({"tipo": "user", "contenido": user_input})
+        if st.session_state.pregunta_pendiente:
+            st.session_state.reacciones.append(user_input)
+            st.session_state.contador += 1
+            st.session_state.mostrada_noticia = False
+            st.session_state.contador_preguntas = 0
+            st.session_state.pregunta_pendiente = False
+            st.rerun()
+        else:
+            evaluacion = cadena_evaluacion.run(respuesta=user_input).strip().lower()
+            if evaluacion == "false":
+                pregunta_ampliacion = cadena_reaccion.run(reaccion=user_input).strip()
+                with st.chat_message("bot", avatar="🤖"):
+                    st.write(pregunta_ampliacion)
+                st.session_state.historial.append({"tipo": "bot", "contenido": pregunta_ampliacion})
+                st.session_state.pregunta_pendiente = True
+            else:
+                procesar_respuesta_valida(user_input)
 
+# Perfil final
 else:
     analisis_total = "\n".join(st.session_state.reacciones)
     perfil = cadena_perfil.run(analisis=analisis_total)
+
     with st.chat_message("bot", avatar="🤖"):
         st.write(f"**Perfil del inversor:** {perfil}")
     st.session_state.historial.append({"tipo": "bot", "contenido": f"**Perfil del inversor:** {perfil}"})
@@ -138,11 +181,12 @@ else:
     }
 
     fig, ax = plt.subplots()
-    ax.bar(puntuaciones.keys(), puntuaciones.values())
+    ax.bar(puntuaciones.keys(), puntuaciones.values(), color="skyblue")
     ax.set_ylabel("Puntuación (0-100)")
     ax.set_title("Perfil del Inversor")
     st.pyplot(fig)
 
+    # Guardar en Google Sheets
     try:
         creds_json_str = st.secrets["gcp_service_account"]
         creds_json = json.loads(creds_json_str)
@@ -150,9 +194,18 @@ else:
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_json, scope)
         client = gspread.authorize(creds)
         sheet = client.open('BBDD_RESPUESTAS').sheet1
-
         fila = st.session_state.reacciones + list(puntuaciones.values())
         sheet.append_row(fila)
         st.success("Datos guardados exitosamente en Google Sheets")
     except Exception as e:
         st.error(f"Error al guardar datos: {str(e)}")
+
+# Mantener el foco en el input
+st.markdown("""
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const input = document.querySelector('.stChatInput textarea');
+    if(input) input.focus();
+});
+</script>
+""", unsafe_allow_html=True)
